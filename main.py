@@ -1,16 +1,14 @@
 #!/usr/bin/python
 
+from __future__ import division
 import sys
 from scipy import misc
 import numpy as np
 
 def PSNR_calculator(original, compressed):
-    MSE = 0
-    for i in range(original.shape[0]):
-        for j in range(original.shape[1]):
-            for k in range(original.shape[2]):
-                MSE = MSE + (original[i,j,k] - compressed[i,j,k])**2
-    return 10*np.log(((3**original.shape[2])**2)*original.shape[0]*original.shape[1]/MSE)
+    MSE = np.sum(np.square(np.asarray(original, dtype=np.float) - np.asarray(compressed, dtype=np.float))) 
+    MSE = MSE / (float(original.shape[0]) * float(original.shape[1]) * float(original.shape[2]))
+    return 20.0 * np.log10( float(np.iinfo(original.dtype).max) + 1.0 ) - 10.0 * np.log10( MSE )
 
 def simple_downsample(image):
     return 0
@@ -21,7 +19,8 @@ def main():
         print 'Failed to Supply Input Image'
         return -1
     else:
-        im = misc.imread(arguments[1])
-        print PSNR_calculator(im,im)
+        im1 = misc.imread(arguments[1])
+        im2 = misc.imread(arguments[2])
+        print PSNR_calculator(im1,im2)
 
 main()
