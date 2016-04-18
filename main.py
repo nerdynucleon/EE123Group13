@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 import scipy
 from scipy.misc import imread, imsave
+from radio import Transmitter, Receiver
 import matplotlib.pyplot as plt
 import sys
 import numpy as np
@@ -26,8 +27,15 @@ def main():
         except IOError:
             print('Unable to open file:', img_file, file=sys.stderr)
 
+    tx, rx = Transmitter(), Receiver()
     for img in imgs:
-        plt.imshow(img)
-        plt.show()
+        tx.transmit(img)
+    for _ in range(len(imgs)):
+        img = rx.receive()
+        try:
+            plt.imshow(img)
+            plt.show()
+        except:
+            print('ERROR: Unable to display received image.', file=sys.stderr)
 
 main()
