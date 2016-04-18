@@ -31,15 +31,21 @@ def main():
             return
 
     tx, rx = Transmitter(), Receiver()
-    for img in imgs:
-        tx.transmit(img)
     for i in range(len(imgs)):
-        img = rx.receive()
+        img = imgs[i]
+        tx.transmit(img)
+        img_rcv = rx.receive()
         try:
-            plt.imshow(img)
-            plt.show()
-            psnr = PSNR_calculator(imgs[i], img)
+            psnr = PSNR_calculator(img, img_rcv)
             print('PSNR for {}: {} db'.format(img_files[i], psnr))
+
+            f, (ax1, ax2) = plt.subplots(1, 2)
+            ax1.imshow(img)
+            ax1.set_title('Sent image')
+            ax2.imshow(img_rcv)
+            ax2.set_title('Received image')
+
+            plt.show()
         except:
             print('ERROR: Unable to display received image.', file=sys.stderr)
 
