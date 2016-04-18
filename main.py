@@ -10,6 +10,8 @@ import numpy as np
 def PSNR_calculator(original, compressed):
     MSE = np.sum(np.square(np.asarray(original, dtype=np.float) - np.asarray(compressed, dtype=np.float))) 
     MSE = MSE / (float(original.shape[0]) * float(original.shape[1]) * float(original.shape[2]))
+    if MSE == 0:
+        return float('inf')
     return 20 * np.log10( float(np.iinfo(original.dtype).max) + 1) - 10 * np.log10(MSE)
 
 def simple_downsample(image):
@@ -26,15 +28,18 @@ def main():
             imgs.append(imread(img_file))
         except IOError:
             print('Unable to open file:', img_file, file=sys.stderr)
+            return
 
     tx, rx = Transmitter(), Receiver()
     for img in imgs:
         tx.transmit(img)
-    for _ in range(len(imgs)):
+    for i in range(len(imgs)):
         img = rx.receive()
         try:
             plt.imshow(img)
             plt.show()
+            psnr = PSNR_calculator(imgs[i], img)
+            print('PSNR for {}: {} db'.format(img_files[i], psnr))
         except:
             print('ERROR: Unable to display received image.', file=sys.stderr)
 
