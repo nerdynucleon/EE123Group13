@@ -42,6 +42,8 @@ class Transmitter(object):
 
         bytes_original = 3 * image.shape[0] * image.shape[1]
         down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
+        if down_sampling_factor == 1:
+            return image, NO_COMPRESSION
 
         h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
         image_lpf = convolve_image(image, h_lpf)
@@ -55,7 +57,7 @@ class Transmitter(object):
         Turns the compressed image into a bitstream packet
         """
 
-        return img_comp
+        return img_comp, comp_type
 
 
     def send_bits(self, bits):
@@ -86,7 +88,11 @@ class Receiver(object):
         """
         Decodes the packet bits into a packet.
         """
-        decimated, orig_shape = bits['decimated_image'], bits['shape']
+        image_comp, comp_type = bits
+        if comp_type == NO_COMPRESSION:
+            return image_comp
+
+        decimated, orig_shape = image_comp['decimated_image'], image_comp['shape']
 
         upsample_xy = imresize(decimated, orig_shape).astype(np.uint8)
 
