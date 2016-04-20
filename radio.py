@@ -9,7 +9,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-TRANS_SIZE = 2500
+TRANS_SIZE = 7500
 
 # Compression types
 NO_COMPRESSION = 0
