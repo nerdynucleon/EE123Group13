@@ -2,8 +2,11 @@ from __future__ import division
 from __future__ import print_function
 from multiprocessing import Process, Queue
 from Queue import Empty as QueueEmptyError
+from scipy import ndimage
+import cv2
 
 NO_COMPRESSION = 0
+CARTOON_THRESHOLD = 50
 
 send_queue = Queue()
 
@@ -55,6 +58,18 @@ class Transmitter(object):
 
         send_queue.put(bits)
 
+    def detect_img_type(self, image):
+        """
+        Decides whether image is cartoon or natural, influencing the
+        compression type. Returns bool (1 is natural, 0 is cartoon).
+        """
+        image_smoothed = []
+        cv.Smooth(image, image_smoothed, smoothtype=CV_BILATERAL, param1=3, param2=0, param3=0, param4=0)
+
+        #the bigger the difference the less cartoon like it is
+        cartoon_index = mean(image - image_smoothed)
+        return cartoon_index > CARTOON_THRESHOLD:
+
 
 class Receiver(object):
 
@@ -97,4 +112,3 @@ class Receiver(object):
             return send_queue.get(timeout=75)
         except QueueEmptyError:
             return None
-        
