@@ -21,7 +21,6 @@ def PSNR_calculator(original, compressed):
     return 20 * np.log10( float(np.iinfo(original.dtype).max) + 1) - 10 * np.log10(MSE)
 
 def simple_encode_downsample(image):
-    global transmission_size
     bytes_original = float(image.shape[0]) * float(image.shape[1])
     down_sampling_factor = np.ceil(bytes_original / transmission_size)
     block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
@@ -32,7 +31,6 @@ def simple_encode_downsample(image):
     return (bit_stream, image.shape)
 
 def simple_decode_downsample(bit_stream, shape):
-    global transmission_size
     bytes_original = float(shape[0]) * float(shape[1])
     down_sampling_factor = np.ceil(bytes_original / transmission_size)
     block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
@@ -74,5 +72,6 @@ def main():
             plt.show()
         except:
             print('ERROR: Unable to display received image.', file=sys.stderr)
+            raise
 
 main()

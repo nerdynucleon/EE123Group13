@@ -2,8 +2,18 @@ from __future__ import division
 from __future__ import print_function
 from multiprocessing import Process, Queue
 from Queue import Empty as QueueEmptyError
+from scipy import signal
+from scipy.misc import imread, imsave, imresize
+from scipy.ndimage import filters as im_filters
+import numpy as np
 
+import matplotlib.pyplot as plt
+
+TRANS_SIZE = 2500
+
+# Compression types
 NO_COMPRESSION = 0
+DECIMATE = 1
 
 send_queue = Queue()
 
@@ -16,9 +26,10 @@ class Transmitter(object):
         """
         Compresses and transmits image in 75 seconds
         """
+        # image = np.average(image, axis=2).astype(int)
 
         img_comp, comp_type = self.compress_image(image)
-        bits = self.packet_to_bits(self.to_packet(img_comp, comp_type))
+        bits = self.to_packet_bits(img_comp, comp_type)
 
         Process(target=self.send_bits, args=(bits, )).start()
 
@@ -29,23 +40,22 @@ class Transmitter(object):
         for the type of compression it uses.
         """
 
-        return image, NO_COMPRESSION
+        bytes_original = 3 * image.shape[0] * image.shape[1]
+        down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
+
+        h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
+        image_lpf = convolve_image(image, h_lpf)
+        decimated_xy = image_lpf[::down_sampling_factor, ::down_sampling_factor]
+
+        return {'decimated_image': decimated_xy, 'shape': image.shape}, DECIMATE
 
 
-    def to_packet(self, img_comp, comp_type):
+    def to_packet_bits(self, img_comp, comp_type):
         """
         Turns the compressed image into a bitstream packet
         """
 
         return img_comp
-
-
-    def packet_to_bits(self, packet):
-        """
-        Turns the packet into bits to be sent over the radio.
-        """
-
-        return packet
 
 
     def send_bits(self, bits):
@@ -76,14 +86,18 @@ class Receiver(object):
         """
         Decodes the packet bits into a packet.
         """
+        decimated, orig_shape = bits['decimated_image'], bits['shape']
 
-        return bits
+        upsample_xy = imresize(decimated, orig_shape).astype(np.uint8)
+
+        return upsample_xy
 
 
     def packet_to_img(self, pkt):
         """
         Turns the packet into an image.
         """
+
 
         return pkt
 
@@ -97,4 +111,31 @@ class Receiver(object):
             return send_queue.get(timeout=75)
         except QueueEmptyError:
             return None
+
+def wc_to_sigma(wc):
+    return np.sqrt(2*np.log(2))/wc
+
+def gaussian_lpf(wc, width=None):
+    sigma = wc_to_sigma(wc)
+    if width is None:
+        width = 6*sigma
+
+    x = np.r_[:width].astype(float)
+    y = x[:,np.newaxis]
+    x0 = y0 = width // 2
+    x, y = x-x0, y-y0
+
+    return np.exp(-(x**2 + y**2)/(2*sigma**2)) / (2 * np.pi * sigma**2)
+
+def convolve_image(image, filt):
+    image_lpf = np.zeros(image.shape)
+    for i in range(3):
+        image_lpf[:,:,i] = im_filters.convolve(image[:,:,i], filt) # signal.convolve2d(image[:,:,i], filt, mode='same')
+
+    return image_lpf.astype(np.uint8)
+
+def to_uint8(image):
+    image += np.min(image)
+    image *= 255/np.max(image)
+    return image.astype(np.uint8)
         
