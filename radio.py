@@ -93,8 +93,14 @@ class Receiver(object):
             return image_comp
 
         decimated, orig_shape = image_comp['decimated_image'], image_comp['shape']
+        bytes_original = 3 * orig_shape[0] * orig_shape[1]
+        down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
 
-        upsample_xy = imresize(decimated, orig_shape).astype(np.uint8)
+        upsampled = imresize(decimated, orig_shape, interp='nearest').astype(np.uint8)
+        h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
+        upsample_xy = convolve_image(upsampled, h_lpf)
+
+        # upsample_xy = imresize(decimated, orig_shape).astype(np.uint8)
 
         return upsample_xy
 
@@ -141,7 +147,8 @@ def convolve_image(image, filt):
     return image_lpf.astype(np.uint8)
 
 def to_uint8(image):
-    image += np.min(image)
-    image *= 255/np.max(image)
+    image = np.copy(image)
+    image = image / np.max(image)
+    image *= 255
     return image.astype(np.uint8)
         
