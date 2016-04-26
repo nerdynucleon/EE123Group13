@@ -40,7 +40,7 @@ class Transmitter(object):
         for the type of compression it uses.
         """
 
-        bytes_original = 3 * image.shape[0] * image.shape[1]
+        bytes_original = image.shape[2] * image.shape[0] * image.shape[1]
         down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
         if down_sampling_factor == 1:
             return image, NO_COMPRESSION
@@ -48,7 +48,7 @@ class Transmitter(object):
         h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
         image_lpf = convolve_image(image, h_lpf)
         decimated_xy = image_lpf[::down_sampling_factor, ::down_sampling_factor]
-
+             
         return {'decimated_image': decimated_xy, 'shape': image.shape}, DECIMATE
 
 
@@ -95,7 +95,6 @@ class Receiver(object):
         decimated, orig_shape = image_comp['decimated_image'], image_comp['shape']
 
         upsample_xy = imresize(decimated, orig_shape).astype(np.uint8)
-
         return upsample_xy
 
 
@@ -144,4 +143,29 @@ def to_uint8(image):
     image += np.min(image)
     image *= 255/np.max(image)
     return image.astype(np.uint8)
-        
+
+
+## Shitty Decimation
+def simple_decimation(image):
+    bytes_original = float(image.shape[0]) * float(image.shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+   
+    downsample0 = signal.decimate(np.asarray(image, dtype=np.float), block_size, axis = 0) 
+    downsample1 = np.asarray( signal.decimate(downsample0, block_size, axis = 1), dtype=np.uint8)           
+    return (downsample1, image.shape)
+
+def simple_upsample(image, shape):
+    bytes_original = float(shape[0]) * float(shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+    print(image.shape) 
+    upsample0 = signal.resample(image, shape[0], axis = 0) 
+    print(upsample0.shape) 
+    upsample1 = signal.resample(upsample0, shape[1], axis = 1)             
+    print(upsample1.shape) 
+    return upsample1
+
+# TRANSMISSION / RECIEVE BIT STREAM    
+# bit_stream = np.unpackbits(downsample1)
+# image = np.packbits(bit_stream) 
