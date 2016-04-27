@@ -28,8 +28,6 @@ class Transmitter(object):
         """
         Compresses and transmits image in 75 seconds
         """
-        imtype = BLACK_WHITE
-
         img_comp, comp_type = self.compress_image(image, imtype)
         bits = self.to_packet_bits(img_comp, comp_type)
 
@@ -42,7 +40,7 @@ class Transmitter(object):
         for the type of compression it uses.
         """
         if imtype is None:
-            if 3 * image.shape[0]*image.shape[1] <= TRANS_SIZE:
+            if image.shape[2] * image.shape[0]*image.shape[1] <= TRANS_SIZE:
                 imtype = NO_COMPRESSION
             else:
                 imtype = DECIMATE
@@ -74,7 +72,6 @@ class Transmitter(object):
             return {'decimated_image': decimated_xy, 'shape': image.shape}, DECIMATE
 
         return None
-
 
     def to_packet_bits(self, img_comp, comp_type):
         """
@@ -219,4 +216,29 @@ def bw_rle_decode(bw_rle):
         decoded.extend([curr_val]*run)
         curr_val = 0 if curr_val else 1  # flip curr_val
     return np.array(decoded).astype(np.uint8)
+
+## Shitty Decimation
+def simple_decimation(image):
+    bytes_original = float(image.shape[0]) * float(image.shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+   
+    downsample0 = signal.decimate(np.asarray(image, dtype=np.float), block_size, axis = 0) 
+    downsample1 = np.asarray( signal.decimate(downsample0, block_size, axis = 1), dtype=np.uint8)           
+    return (downsample1, image.shape)
+
+def simple_upsample(image, shape):
+    bytes_original = float(shape[0]) * float(shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+    print(image.shape) 
+    upsample0 = signal.resample(image, shape[0], axis = 0) 
+    print(upsample0.shape) 
+    upsample1 = signal.resample(upsample0, shape[1], axis = 1)             
+    print(upsample1.shape) 
+    return upsample1
+
+# TRANSMISSION / RECIEVE BIT STREAM    
+# bit_stream = np.unpackbits(downsample1)
+# image = np.packbits(bit_stream) 
 
