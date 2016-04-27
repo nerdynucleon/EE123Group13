@@ -6,6 +6,7 @@ from scipy import signal
 from scipy.misc import imread, imsave, imresize
 from scipy.ndimage import filters as im_filters
 import numpy as np
+import encoding as enc
 
 import matplotlib.pyplot as plt
 
@@ -14,6 +15,7 @@ TRANS_SIZE = 7500
 # Compression types
 NO_COMPRESSION = 0
 DECIMATE = 1
+BLACK_WHITE = 2
 
 send_queue = Queue()
 
@@ -22,40 +24,70 @@ class Transmitter(object):
     def __init__(self):
         pass
 
-    def transmit(self, image):
+    def transmit(self, image, imtype=None):
         """
         Compresses and transmits image in 75 seconds
         """
-        # image = np.average(image, axis=2).astype(int)
+        imtype = BLACK_WHITE
 
-        img_comp, comp_type = self.compress_image(image)
+        img_comp, comp_type = self.compress_image(image, imtype)
         bits = self.to_packet_bits(img_comp, comp_type)
 
         Process(target=self.send_bits, args=(bits, )).start()
 
 
-    def compress_image(self, image):
+    def compress_image(self, image, imtype):
         """
         Compresses the image so it will fit in a packet. Returns an integer
         for the type of compression it uses.
         """
-
-        bytes_original = 3 * image.shape[0] * image.shape[1]
-        down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
-        if down_sampling_factor == 1:
+        if imtype is None:
+            if 3 * image.shape[0]*image.shape[1] <= TRANS_SIZE:
+                imtype = NO_COMPRESSION
+            else:
+                imtype = DECIMATE
+        
+        if imtype == NO_COMPRESSION:
             return image, NO_COMPRESSION
+        elif imtype == BLACK_WHITE:
+            gs = np.average(image, axis=2)
+            black_loc = np.unravel_index(gs.argmin(), gs.shape)
+            white_loc = np.unravel_index(gs.argmax(), gs.shape)
+            black, white = image[black_loc[0]][black_loc[1]], image[white_loc[0]][white_loc[1]]
 
-        h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
-        image_lpf = convolve_image(image, h_lpf)
-        decimated_xy = image_lpf[::down_sampling_factor, ::down_sampling_factor]
+            bw = (gs > np.max(gs)/2).astype(int)
+            bw_1D = np.reshape(bw, bw.shape[0]*bw.shape[1])
+            rle_bw = bw_rle_encode(bw_1D)
 
-        return {'decimated_image': decimated_xy, 'shape': image.shape}, DECIMATE
+            return {'rle_image': rle_bw, 'black': black, 'white': white, 'shape': image.shape}, BLACK_WHITE
+
+        elif imtype == DECIMATE:
+            bytes_original = 3 * image.shape[0] * image.shape[1]
+            down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
+            if down_sampling_factor == 1:
+                return image, NO_COMPRESSION
+
+            h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
+            image_lpf = convolve_image(image, h_lpf)
+            decimated_xy = image_lpf[::down_sampling_factor, ::down_sampling_factor]
+
+            return {'decimated_image': decimated_xy, 'shape': image.shape}, DECIMATE
+
+        return None
 
 
     def to_packet_bits(self, img_comp, comp_type):
         """
         Turns the compressed image into a bitstream packet
         """
+        if comp_type == DECIMATE:
+            img = img_comp['decimated_image']
+            img_shape = img.shape
+            img_1D = np.reshape(img, img_shape[0]*img_shape[1]*img_shape[2])
+            img_bytes = img_1D.tobytes()
+
+            img_comp['decimated_image'] = img_shape, enc.encode(img_bytes)
+            print('Sending', len(img_comp['decimated_image'][1]), 'bytes.')
 
         return img_comp, comp_type
 
@@ -91,18 +123,34 @@ class Receiver(object):
         image_comp, comp_type = bits
         if comp_type == NO_COMPRESSION:
             return image_comp
+        elif comp_type == DECIMATE:
+            img_shape, img_bytes = image_comp['decimated_image']
+            img_1D = np.fromstring(enc.decode(img_bytes), dtype=np.uint8)
+            decimated = np.reshape(img_1D, img_shape)
+            orig_shape = image_comp['shape']
 
-        decimated, orig_shape = image_comp['decimated_image'], image_comp['shape']
-        bytes_original = 3 * orig_shape[0] * orig_shape[1]
-        down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
+            bytes_original = 3 * orig_shape[0] * orig_shape[1]
+            down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
 
-        upsampled = imresize(decimated, orig_shape, interp='nearest').astype(np.uint8)
-        h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
-        upsample_xy = convolve_image(upsampled, h_lpf)
+            upsampled = imresize(decimated, orig_shape, interp='nearest').astype(np.uint8)
+            h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
+            upsample_xy = convolve_image(upsampled, h_lpf)
 
-        # upsample_xy = imresize(decimated, orig_shape).astype(np.uint8)
+            return upsample_xy
+        elif comp_type == BLACK_WHITE:
+            rle_bw, black, white, orig_shape = image_comp['rle_image'], image_comp['black'], image_comp['white'], image_comp['shape']
 
-        return upsample_xy
+            bw_1D = bw_rle_decode(rle_bw)
+            bw = np.reshape(bw_1D, (orig_shape[0], orig_shape[1]))
+            bw_inv = (bw < 1).astype(np.uint8)
+            red_w, green_w, blue_w = bw*255, bw*255, bw*255
+            red_b, green_b, blue_b = bw_inv*0, bw_inv*0, bw_inv*0
+            red, green, blue = red_w + red_b, green_w + green_b, blue_w + blue_b
+
+            recon = np.zeros(orig_shape).astype(np.uint8)
+            recon[:,:,0], recon[:,:,1], recon[:,:,2] = red, green, blue
+
+            return recon
 
 
     def packet_to_img(self, pkt):
@@ -151,4 +199,24 @@ def to_uint8(image):
     image = image / np.max(image)
     image *= 255
     return image.astype(np.uint8)
-        
+
+def bw_rle_encode(bw):
+    encoded = []
+    curr_val, count = 0, 0
+    for pix in bw:
+        if pix != curr_val:
+            encoded.append(count)
+            curr_val, count = pix, 0
+        count += 1
+    encoded.append(count)
+
+    return np.array(encoded)
+
+def bw_rle_decode(bw_rle):
+    decoded = []
+    curr_val = 0
+    for run in bw_rle:
+        decoded.extend([curr_val]*run)
+        curr_val = 0 if curr_val else 1  # flip curr_val
+    return np.array(decoded).astype(np.uint8)
+
