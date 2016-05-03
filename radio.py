@@ -154,7 +154,7 @@ class Receiver(object):
         """
         pkt = None
 
-        pkt_bytes = bits.tobytes()
+        pkt_bytes = bits #.tobytes()
 
         comp_type_bytes, pkt_bytes = pkt_bytes[:COMP_TYPE_SIZE], pkt_bytes[COMP_TYPE_SIZE:]
         comp_type = struct.unpack(COMP_TYPE, comp_type_bytes)[0]
@@ -229,11 +229,15 @@ class Receiver(object):
         """
         Read bits from SDR
         """
+        print('Listening for bytes...')
+        b = receive_bytes()
+        print('Got bytes.')
+        return b
 
-        try:
-            return send_queue.get(timeout=75)
-        except QueueEmptyError:
-            return None
+        # try:
+        #     return send_queue.get(timeout=75)
+        # except QueueEmptyError:
+        #     return None
 
 def wc_to_sigma(wc):
     return np.sqrt(2*np.log(2))/wc

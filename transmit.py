@@ -529,7 +529,6 @@ def receive_bytes():
         if state == 2 :
             break
     time.sleep(10)
-    print(time.time() - starttime)
     cQin.put("EOT")
     return f1
 
