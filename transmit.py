@@ -561,7 +561,7 @@ def send_bytes(data):
     Qout.put(0.1*tmp)
     Qout.put("KEYOFF")
     Qout.put("EOT")
-    play_audio(Qout, cQout, p, fs_usb, dusb_out, s)
+    play_audio(Qout, cQout, p, fs, dusb_out, s)
     # t_play.start()
     cQout.put("EOT")
         
