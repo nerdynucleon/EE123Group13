@@ -5,6 +5,7 @@ from Queue import Empty as QueueEmptyError
 from scipy import signal
 from scipy.misc import imread, imsave, imresize
 from scipy.ndimage import filters as im_filters
+from transmit import send_bytes, receive_bytes
 import numpy as np
 import encoding as enc
 import struct
@@ -119,7 +120,7 @@ class Transmitter(object):
 
         bits = bitarray.bitarray()
         bits.frombytes(pkt_bytes)
-        return bits
+        return pkt_bytes
 
 
     def send_bits(self, bits):
@@ -127,7 +128,8 @@ class Transmitter(object):
         Sends bits through Baofeng.
         """
         print('Sending', len(bits), 'bits.')
-        send_queue.put(bits)
+        # send_queue.put(bits)
+        send_bytes(bits)
 
 
 class Receiver(object):

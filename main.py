@@ -33,24 +33,24 @@ def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose =
     for i in range(len(imgs)):
         img = imgs[i]
         tx.transmit(img)
-        img_rcv = rx.receive()
-        try:
-            psnr = PSNR_calculator(img, img_rcv)
-            if verbose:
-                print('PSNR for {}: {} db'.format(img_files[i], psnr))
+        # img_rcv = rx.receive()
+        # try:
+        #     psnr = PSNR_calculator(img, img_rcv)
+        #     if verbose:
+        #         print('PSNR for {}: {} db'.format(img_files[i], psnr))
             
-            if display:
-                f, (ax1, ax2) = plt.subplots(1, 2)
-                ax1.imshow(img)
-                ax1.set_title('Sent image')
-                ax2.imshow(img_rcv)
-                ax2.set_title('Received image')
+        #     if display:
+        #         f, (ax1, ax2) = plt.subplots(1, 2)
+        #         ax1.imshow(img)
+        #         ax1.set_title('Sent image')
+        #         ax2.imshow(img_rcv)
+        #         ax2.set_title('Received image')
 
-                plt.show()
+        #         plt.show()
 
-        except:
-            print('ERROR: Unable to display received image.', file=sys.stderr)
-            raise
+        # except:
+        #     print('ERROR: Unable to display received image.', file=sys.stderr)
+        #     raise
 
 if __name__ == "__main__":
     main()
