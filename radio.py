@@ -5,7 +5,7 @@ from Queue import Empty as QueueEmptyError
 from scipy import signal
 from scipy.misc import imread, imsave, imresize
 from scipy.ndimage import filters as im_filters
-from transmit import send_bytes, receive_bytes
+# from transmit import send_bytes, receive_bytes
 import numpy as np
 import encoding as enc
 import struct
@@ -41,8 +41,8 @@ BW_HEADER_SIZE = struct.calcsize(BW_HEADER)
 
 class Transmitter(object):
 
-    def __init__(self):
-        pass
+    def __init__(self, lp_mode):
+        self._lp_mode = lp_mode
 
     def transmit(self, image, imtype=None):
         """
@@ -173,8 +173,11 @@ class Transmitter(object):
         Sends bits through Baofeng.
         """
         print('Sending', len(bits), 'bits.')
-        # send_queue.put(bits)
-        send_bytes(bits)
+        if self._lp_mode:
+            send_queue.put(bits)
+        else:
+            from transmit import send_bytes
+            send_bytes(bits)
 
 
     def is_color_grayscale(img, size=40, mean_error_thresh=22):
@@ -236,8 +239,8 @@ class Transmitter(object):
 
 class Receiver(object):
 
-    def __init__(self):
-        pass
+    def __init__(self, lp_mode):
+        self._lp_mode = lp_mode
 
     def receive(self):
         """
@@ -256,7 +259,7 @@ class Receiver(object):
         """
         pkt = None
 
-        pkt_bytes = bits.tobytes()
+        pkt_bytes = bits #.tobytes()
 
         comp_type_bytes, pkt_bytes = pkt_bytes[:COMP_TYPE_SIZE], pkt_bytes[COMP_TYPE_SIZE:]
         comp_type = struct.unpack(COMP_TYPE, comp_type_bytes)[0]
@@ -331,11 +334,19 @@ class Receiver(object):
         """
         Read bits from SDR
         """
+        if self._lp_mode:
+            try:
+                return send_queue.get(timeout=75)
+            except QueueEmptyError:
+                return None
+        else:
+            from transmit import receive_bytes
+            print('Listening for bytes...')
+            b = receive_bytes()
+            print('Got bytes.')
+            return b
 
-        try:
-            return send_queue.get(timeout=75)
-        except QueueEmptyError:
-            return None
+        
 
 def wc_to_sigma(wc):
     return np.sqrt(2*np.log(2))/wc
