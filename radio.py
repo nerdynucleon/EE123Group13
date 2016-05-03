@@ -7,7 +7,8 @@ from scipy.misc import imread, imsave, imresize
 from scipy.ndimage import filters as im_filters
 import numpy as np
 import encoding as enc
-
+import struct
+import bitarray
 import matplotlib.pyplot as plt
 
 TRANS_SIZE = 7500
@@ -18,6 +19,17 @@ DECIMATE = 1
 BLACK_WHITE = 2
 
 send_queue = Queue()
+
+
+# Struct Formats
+COMP_TYPE = 'b'
+COMP_TYPE_SIZE = struct.calcsize(COMP_TYPE)
+NO_COMP_HEADER = '3i'
+NO_COMP_HEADER_SIZE = struct.calcsize(NO_COMP_HEADER)
+DECIMATE_HEADER = '6i'
+DECIMATE_HEADER_SIZE = struct.calcsize(DECIMATE_HEADER)
+BW_HEADER = '9i'
+BW_HEADER_SIZE = struct.calcsize(BW_HEADER)
 
 class Transmitter(object):
 
@@ -40,7 +52,7 @@ class Transmitter(object):
         for the type of compression it uses.
         """
         if imtype is None:
-            if image.shape[2] * image.shape[0]*image.shape[1] <= TRANS_SIZE:
+            if image.shape[0]*image.shape[1]*image.shape[2] <= TRANS_SIZE:
                 imtype = NO_COMPRESSION
             else:
                 imtype = DECIMATE
@@ -77,23 +89,44 @@ class Transmitter(object):
         """
         Turns the compressed image into a bitstream packet
         """
-        if comp_type == DECIMATE:
+        pkt_bytes = None
+
+        comp_header = struct.pack(COMP_TYPE, comp_type)
+        if comp_type == NO_COMPRESSION:
+            img_shape = img_comp.shape
+            img_1D = np.reshape(img_comp, img_shape[0]*img_shape[1]*img_shape[2])
+            img_bytes = img_1D.tobytes()
+
+            header = struct.pack(NO_COMP_HEADER, *img_shape)
+            pkt_bytes = comp_header + header + img_bytes
+        elif comp_type == DECIMATE:
             img = img_comp['decimated_image']
             img_shape = img.shape
             img_1D = np.reshape(img, img_shape[0]*img_shape[1]*img_shape[2])
             img_bytes = img_1D.tobytes()
 
-            img_comp['decimated_image'] = img_shape, enc.encode(img_bytes)
-            print('Sending', len(img_comp['decimated_image'][1]), 'bytes.')
+            header = struct.pack(DECIMATE_HEADER, *(img_comp['shape'] + img.shape))
+            pkt_bytes = comp_header + header + img_bytes
+        elif comp_type == BLACK_WHITE:
+            rle = img_comp['rle_image']
+            rle_bytes = rle.tobytes()
 
-        return img_comp, comp_type
+            black, white = img_comp['black'], img_comp['white']
+            orig_shape = img_comp['shape']
+
+            header = struct.pack(BW_HEADER, *(tuple(black) + tuple(white) + orig_shape))
+            pkt_bytes = comp_header + header + rle_bytes
+
+        bits = bitarray.bitarray()
+        bits.frombytes(pkt_bytes)
+        return bits
 
 
     def send_bits(self, bits):
         """
         Sends bits through Baofeng.
         """
-
+        print('Sending', len(bits), 'bits.')
         send_queue.put(bits)
 
 
@@ -117,47 +150,78 @@ class Receiver(object):
         """
         Decodes the packet bits into a packet.
         """
-        image_comp, comp_type = bits
+        pkt = None
+
+        pkt_bytes = bits.tobytes()
+
+        comp_type_bytes, pkt_bytes = pkt_bytes[:COMP_TYPE_SIZE], pkt_bytes[COMP_TYPE_SIZE:]
+        comp_type = struct.unpack(COMP_TYPE, comp_type_bytes)[0]
         if comp_type == NO_COMPRESSION:
-            return image_comp
+            noc_header, pkt_bytes = pkt_bytes[:NO_COMP_HEADER_SIZE], pkt_bytes[NO_COMP_HEADER_SIZE:]
+            noc_struct = struct.unpack(NO_COMP_HEADER, noc_header)
+            shape = noc_struct
+
+            img_1D = np.fromstring(pkt_bytes, dtype=np.uint8)
+            img = np.reshape(img_1D, shape)
+
+            pkt = NO_COMPRESSION, img
         elif comp_type == DECIMATE:
-            img_shape, img_bytes = image_comp['decimated_image']
-            img_1D = np.fromstring(enc.decode(img_bytes), dtype=np.uint8)
-            decimated = np.reshape(img_1D, img_shape)
+            dec_header, pkt_bytes = pkt_bytes[:DECIMATE_HEADER_SIZE], pkt_bytes[DECIMATE_HEADER_SIZE:]
+            dec_struct = struct.unpack(DECIMATE_HEADER, dec_header)
+
+            orig_shape, dec_shape = dec_struct[:3], dec_struct [3:]
+
+            img_1D = np.fromstring(pkt_bytes, dtype=np.uint8)
+            decimated = np.reshape(img_1D, dec_shape)
+            data = {'decimated_image': decimated, 'shape': orig_shape}
+
+            pkt = DECIMATE, data
+        elif comp_type == BLACK_WHITE:
+            bw_header, pkt_bytes = pkt_bytes[:BW_HEADER_SIZE], pkt_bytes[BW_HEADER_SIZE:]
+            bw_struct = struct.unpack(BW_HEADER, bw_header)
+
+            black, white, orig_shape = bw_struct[:3], bw_struct[3:6], bw_struct[6:]
+            rle = np.fromstring(pkt_bytes, dtype=int)
+            return BLACK_WHITE, {'rle_image': rle, 'black': black, 'white': white, 'shape': orig_shape}
+
+        return pkt
+
+    def packet_to_img(self, pkt):
+        """
+        Turns the packet into an image.
+        """
+        image = None
+
+        comp_type, image_comp = pkt
+        if comp_type == NO_COMPRESSION:
+            image = image_comp
+        elif comp_type == DECIMATE:
             orig_shape = image_comp['shape']
 
             bytes_original = 3 * orig_shape[0] * orig_shape[1]
             down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
 
-            upsampled = imresize(decimated, orig_shape, interp='nearest').astype(np.uint8)
+            upsampled = imresize(image_comp['decimated_image'], orig_shape, interp='nearest').astype(np.uint8)
             h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
             upsample_xy = convolve_image(upsampled, h_lpf)
 
-            return upsample_xy
+            image = upsample_xy
         elif comp_type == BLACK_WHITE:
             rle_bw, black, white, orig_shape = image_comp['rle_image'], image_comp['black'], image_comp['white'], image_comp['shape']
 
             bw_1D = bw_rle_decode(rle_bw)
             bw = np.reshape(bw_1D, (orig_shape[0], orig_shape[1]))
             bw_inv = (bw < 1).astype(np.uint8)
-            red_w, green_w, blue_w = bw*255, bw*255, bw*255
-            red_b, green_b, blue_b = bw_inv*0, bw_inv*0, bw_inv*0
+            red_w, green_w, blue_w = bw*white[0], bw*white[1], bw*white[2]
+            red_b, green_b, blue_b = bw_inv*black[0], bw_inv*black[1], bw_inv*black[2]
             red, green, blue = red_w + red_b, green_w + green_b, blue_w + blue_b
 
             recon = np.zeros(orig_shape).astype(np.uint8)
             recon[:,:,0], recon[:,:,1], recon[:,:,2] = red, green, blue
 
-            return recon
+            image = recon
 
-
-    def packet_to_img(self, pkt):
-        """
-        Turns the packet into an image.
-        """
-
-
-        return pkt
-
+        return image
 
     def read_bits(self):
         """
@@ -207,7 +271,7 @@ def bw_rle_encode(bw):
         count += 1
     encoded.append(count)
 
-    return np.array(encoded)
+    return np.array(encoded).astype(int)
 
 def bw_rle_decode(bw_rle):
     decoded = []
