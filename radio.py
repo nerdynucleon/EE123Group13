@@ -395,10 +395,12 @@ def gaussian_lpf(wc, width=None):
     return np.exp(-(x**2 + y**2)/(2*sigma**2)) / (2 * np.pi * sigma**2)
 
 def convolve_image(image, filt):
-    image_lpf = np.zeros(image.shape)
-    for i in range(image.shape[2]):
-        image_lpf[:,:,i] = im_filters.convolve(image[:,:,i], filt) # signal.convolve2d(image[:,:,i], filt, mode='same')
-    return image_lpf.astype(np.uint8)
+    layers = ()
+    for i in range(3):
+        layer_lpf = im_filters.convolve(image[:,:,i], filt) # signal.convolve2d(image[:,:,i], filt, mode='same')
+        layers += (layer_lpf.astype(np.uint8), )
+    
+    return np.dstack(layers)
 
 def to_uint8(image):
     image = np.copy(image)
@@ -576,3 +578,44 @@ def dct_upsample(indices_values, original_shape):
                 img_out[i:i+N, j:j+N, k] = fftpack.idct(fftpack.idct(image[i:i+N, j:j+N, k].T, norm='ortho').T, norm='ortho')
 
     return 4 * img_out[0:original_shape[0], 0:original_shape[1], 0:original_shape[2]]
+
+def rle_encode(array_1D):
+    changes, = np.where(np.diff(array_1D) != 0)
+    changes = np.concatenate(([0], changes + 1, [len(array_1D)]))
+    rle = np.array([[b-a, array_1D[a]] for a, b in zip(changes[:-1], changes[1:])]).flatten()
+    if np.max(rle) > 255:
+        raise Exception('Run longer than uint8')
+    return rle.astype(np.uint8)
+
+def rle_decode(rle_enc):
+    decoded = []
+    for i in range(0, len(rle_enc), 2):
+        run = [rle_enc[i+1]]*rle_enc[i]
+        decoded.extend(run)
+    return np.array(decoded, dtype=np.uint8)
+
+
+## Shitty Decimation
+def simple_decimation(image):
+    bytes_original = float(image.shape[0]) * float(image.shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+   
+    downsample0 = signal.decimate(np.asarray(image, dtype=np.float), block_size, axis = 0) 
+    downsample1 = np.asarray( signal.decimate(downsample0, block_size, axis = 1), dtype=np.uint8)           
+    return (downsample1, image.shape)
+
+def simple_upsample(image, shape):
+    bytes_original = float(shape[0]) * float(shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+    print(image.shape) 
+    upsample0 = signal.resample(image, shape[0], axis = 0) 
+    print(upsample0.shape) 
+    upsample1 = signal.resample(upsample0, shape[1], axis = 1)             
+    print(upsample1.shape) 
+    return upsample1
+
+# TRANSMISSION / RECIEVE BIT STREAM    
+# bit_stream = np.unpackbits(downsample1)
+# image = np.packbits(bit_stream) 

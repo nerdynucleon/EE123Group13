@@ -31,9 +31,12 @@ def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose =
         im_type = None
     img_file = args.fname
 
+    img = imread(img_file)
+    if img.shape[2] == 4:
+        img = img[:,:,[0, 1, 2]]
+
     if mode == 'rx':
         rx = radio.Receiver()
-        img = imread(img_file)
         img_rcv = rx.receive()
         try:
             imsave('rcv_image{}.tiff'.format(time.time()), img_rcv)
@@ -53,17 +56,10 @@ def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose =
             print('ERROR: Unable to display received image.', file=sys.stderr)
             raise
     elif mode == 'tx':
-        img_files = sys.argv[1:]
-
-        imgs = imread(img_file)
-
         tx = radio.Transmitter()
         tx.transmit(img, im_type)
     else:
         tx, rx = radio.Transmitter(lp_mode=True), radio.Receiver(lp_mode=True)
-
-        img = imread(img_file)
-        print(im_type)
         tx.transmit(img, im_type)
         img_rcv = rx.receive()
         try:
