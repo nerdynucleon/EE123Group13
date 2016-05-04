@@ -335,6 +335,8 @@ def rle_encode(array_1D):
     changes, = np.where(np.diff(array_1D) != 0)
     changes = np.concatenate(([0], changes + 1, [len(array_1D)]))
     rle = np.array([[b-a, array_1D[a]] for a, b in zip(changes[:-1], changes[1:])]).flatten()
+    if np.max(rle) > 255:
+        raise Exception('Run longer than uint8')
     return rle.astype(np.uint8)
 
 def rle_decode(rle_enc):
