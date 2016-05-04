@@ -579,13 +579,22 @@ def dct_upsample(indices_values, original_shape):
 
     return 4 * img_out[0:original_shape[0], 0:original_shape[1], 0:original_shape[2]]
 
+def create_runs(length, value):
+    runs = []
+    while length > 255:
+        runs.extend([255, value])
+        length -= 255
+    runs.extend([length, value])
+    return runs
+
 def rle_encode(array_1D):
     changes, = np.where(np.diff(array_1D) != 0)
     changes = np.concatenate(([0], changes + 1, [len(array_1D)]))
-    rle = np.array([[b-a, array_1D[a]] for a, b in zip(changes[:-1], changes[1:])]).flatten()
-    if np.max(rle) > 255:
-        raise Exception('Run longer than uint8')
-    return rle.astype(np.uint8)
+    rle = np.array([create_runs(b-a, array_1D[a]) for a, b in zip(changes[:-1], changes[1:])])
+    rle_flat = []
+    for l in rle:
+        rle_flat.extend(l)
+    return np.array(rle_flat, dtype=np.uint8)
 
 def rle_decode(rle_enc):
     decoded = []
