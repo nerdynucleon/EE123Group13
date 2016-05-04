@@ -39,7 +39,7 @@ def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose =
         rx = radio.Receiver()
         img_rcv = rx.receive()
         try:
-            imsave('rcv_image{}.tiff'.format(time.time()), img_rcv)
+            imsave('rcv_image{}.tiff'.format(int(time.time())), img_rcv)
 
             psnr = radio.PSNR(img, img_rcv)
             print('PSNR:', psnr, 'db')
