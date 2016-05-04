@@ -29,7 +29,7 @@ NO_COMP_HEADER = '3i'
 NO_COMP_HEADER_SIZE = struct.calcsize(NO_COMP_HEADER)
 DECIMATE_HEADER = '6i'
 DECIMATE_HEADER_SIZE = struct.calcsize(DECIMATE_HEADER)
-BW_HEADER = '9i'
+BW_HEADER = '12ib'
 BW_HEADER_SIZE = struct.calcsize(BW_HEADER)
 
 class Transmitter(object):
@@ -61,16 +61,30 @@ class Transmitter(object):
         if imtype == NO_COMPRESSION:
             return image, NO_COMPRESSION
         elif imtype == BLACK_WHITE:
-            gs = np.average(image, axis=2)
-            black_loc = np.unravel_index(gs.argmin(), gs.shape)
-            white_loc = np.unravel_index(gs.argmax(), gs.shape)
-            black, white = image[black_loc[0]][black_loc[1]], image[white_loc[0]][white_loc[1]]
+            dec = 1
+            while True:
+                image_dec, dec_shape = image, image.shape
+                if dec != 1:
+                    print('dec:', dec)
+                    image_dec = image[::dec, ::dec]
+                    dec_shape = image_dec.shape
 
-            bw = (gs > np.max(gs)/2).astype(int)
-            bw_1D = np.reshape(bw, bw.shape[0]*bw.shape[1])
-            rle_bw = bw_rle_encode(bw_1D)
+                gs = np.average(image_dec, axis=2)
+                black_loc = np.unravel_index(gs.argmin(), gs.shape)
+                white_loc = np.unravel_index(gs.argmax(), gs.shape)
+                black, white = image[black_loc[0]][black_loc[1]], image[white_loc[0]][white_loc[1]]
 
-            return {'rle_image': rle_bw, 'black': black, 'white': white, 'shape': image.shape}, BLACK_WHITE
+                bw = (gs > np.max(gs)/2).astype(int)
+                bw_1D = np.reshape(bw, bw.shape[0]*bw.shape[1])
+                rle_bw, t = bw_rle_encode(bw_1D)
+                
+
+                print('size:', len(rle_bw)*rle_bw.itemsize, 'type:', t)
+                dec *= 2
+                if len(rle_bw)*rle_bw.itemsize < TRANS_SIZE:
+                    break
+
+            return {'rle_image': rle_bw, 'black': black, 'white': white, 'shape': image.shape, 'dec_shape': dec_shape, 'type': t}, BLACK_WHITE
 
         elif imtype == DECIMATE:
             bytes_original = 3 * image.shape[0] * image.shape[1]
@@ -114,25 +128,34 @@ class Transmitter(object):
 
             black, white = img_comp['black'], img_comp['white']
             orig_shape = img_comp['shape']
+            dec_shape = img_comp['dec_shape']
 
-            header = struct.pack(BW_HEADER, *(tuple(black) + tuple(white) + orig_shape))
+            type_bit = 0
+            if img_comp['type'] == np.uint16:
+                type_bit = 1
+            elif img_comp['type'] == np.uint8:
+                type_bit = 2
+
+            header = struct.pack(BW_HEADER, *(tuple(black) + tuple(white) + orig_shape + dec_shape + (type_bit, )))
             pkt_bytes = comp_header + header + rle_bytes
+            print('rle:', len(rle))
+            print('rle_bytes:', len(rle_bytes))
+            print('header:', len(header))
+            print('pkt_bytes:', len(pkt_bytes))
 
-        bits = bitarray.bitarray()
-        bits.frombytes(pkt_bytes)
         return pkt_bytes
 
 
-    def send_bits(self, bits):
+    def send_bits(self, bytes):
         """
-        Sends bits through Baofeng.
+        Sends bytes through Baofeng.
         """
-        print('Sending', len(bits), 'bits.')
+        print('Sending', len(bytes), 'bytes.')
         if self._lp_mode:
-            send_queue.put(bits)
+            send_queue.put(bytes)
         else:
             from transmit import send_bytes
-            send_bytes(bits)
+            send_bytes(bytes)
 
 
 class Receiver(object):
@@ -185,9 +208,15 @@ class Receiver(object):
             bw_header, pkt_bytes = pkt_bytes[:BW_HEADER_SIZE], pkt_bytes[BW_HEADER_SIZE:]
             bw_struct = struct.unpack(BW_HEADER, bw_header)
 
-            black, white, orig_shape = bw_struct[:3], bw_struct[3:6], bw_struct[6:]
-            rle = np.fromstring(pkt_bytes, dtype=int)
-            return BLACK_WHITE, {'rle_image': rle, 'black': black, 'white': white, 'shape': orig_shape}
+            black, white, orig_shape, dec_shape, type_bit = bw_struct[:3], bw_struct[3:6], bw_struct[6:9], bw_struct[9:12], bw_struct[12]
+            t = int
+            if type_bit == 1:
+                t = np.uint16
+            elif type_bit == 2:
+                t = np.uint8
+
+            rle = np.fromstring(pkt_bytes, dtype=t)
+            return BLACK_WHITE, {'rle_image': rle, 'black': black, 'white': white, 'shape': orig_shape, 'dec_shape': dec_shape}
 
         return pkt
 
@@ -212,18 +241,19 @@ class Receiver(object):
 
             image = upsample_xy
         elif comp_type == BLACK_WHITE:
-            rle_bw, black, white, orig_shape = image_comp['rle_image'], image_comp['black'], image_comp['white'], image_comp['shape']
+            rle_bw, black, white, orig_shape, dec_shape = image_comp['rle_image'], image_comp['black'], image_comp['white'], image_comp['shape'], image_comp['dec_shape']
 
             bw_1D = bw_rle_decode(rle_bw)
-            bw = np.reshape(bw_1D, (orig_shape[0], orig_shape[1]))
+            bw = np.reshape(bw_1D, (dec_shape[0], dec_shape[1]))
             bw_inv = (bw < 1).astype(np.uint8)
             red_w, green_w, blue_w = bw*white[0], bw*white[1], bw*white[2]
             red_b, green_b, blue_b = bw_inv*black[0], bw_inv*black[1], bw_inv*black[2]
             red, green, blue = red_w + red_b, green_w + green_b, blue_w + blue_b
 
-            recon = np.zeros(orig_shape).astype(np.uint8)
+            recon = np.zeros(dec_shape).astype(np.uint8)
             recon[:,:,0], recon[:,:,1], recon[:,:,2] = red, green, blue
-
+            if dec_shape != orig_shape:
+                recon = upsampled = imresize(recon, orig_shape, interp='nearest').astype(np.uint8)
             image = recon
 
         return image
@@ -284,7 +314,13 @@ def bw_rle_encode(bw):
         count += 1
     encoded.append(count)
 
-    return np.array(encoded).astype(int)
+    encoded, t = np.array(encoded), int
+    if max(encoded) < 256:
+        encoded, t = encoded.astype(np.uint8), np.uint8
+    elif max(encoded) < 2**16:
+        encoded, t = encoded.astype(np.uint16), np.uint16
+
+    return encoded, t
 
 def bw_rle_decode(bw_rle):
     decoded = []

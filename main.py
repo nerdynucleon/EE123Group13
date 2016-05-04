@@ -22,7 +22,7 @@ def PSNR_calculator(original, compressed):
 def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose = True):
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--mode', help='{rx, tx, test}')
-    parser.add_argument('-t', '--im_type')
+    parser.add_argument('-t', '--im_type', help='{NO_COMP, DEC, BW}')
     parser.add_argument('fname')
     args = parser.parse_args()
     
