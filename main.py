@@ -12,20 +12,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 
-def PSNR_calculator(original, compressed):
-    MSE = np.sum(np.square(np.asarray(original, dtype=np.float) - np.asarray(compressed, dtype=np.float))) 
-    MSE = MSE / (float(original.shape[0]) * float(original.shape[1]) * float(original.shape[2]))
-    if MSE == 0:
-        return float('inf')
-    return 20 * np.log10( float(np.iinfo(original.dtype).max) + 1) - 10 * np.log10(MSE)
-
 def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose = True):
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--mode', help='{rx, tx, test}')
     parser.add_argument('-t', '--im_type', help='{NO_COMP, DEC, BW}')
     parser.add_argument('fname')
     args = parser.parse_args()
-    
+
     mode = args.mode if args.mode else 'test'
     im_type = args.im_type
     if im_type == 'NO_COMP':
@@ -45,9 +38,9 @@ def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose =
         try:
             imsave('rcv_image{}.tiff'.format(time.time()), img_rcv)
 
-            psnr = PSNR_calculator(img, img_rcv)
+            psnr = radio.PSNR(img, img_rcv)
             print('PSNR:', psnr, 'db')
-            
+
             f, (ax1, ax2) = plt.subplots(1, 2)
             ax1.imshow(img)
             ax1.set_title('Sent image')
@@ -61,7 +54,7 @@ def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose =
             raise
     elif mode == 'tx':
         img_files = sys.argv[1:]
-        
+
         imgs = imread(img_file)
 
         tx = radio.Transmitter()
@@ -70,12 +63,13 @@ def main(img_files = ['imgs/im1.bmp', 'imgs/im2.bmp'], display = True, verbose =
         tx, rx = radio.Transmitter(lp_mode=True), radio.Receiver(lp_mode=True)
 
         img = imread(img_file)
+        print(im_type)
         tx.transmit(img, im_type)
         img_rcv = rx.receive()
         try:
-            psnr = PSNR_calculator(img, img_rcv)
+            psnr = radio.PSNR(img, img_rcv)
             print('PSNR:', psnr, 'db')
-            
+
             f, (ax1, ax2) = plt.subplots(1, 2)
             ax1.imshow(img)
             ax1.set_title('Sent image')
