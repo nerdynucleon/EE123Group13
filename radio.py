@@ -46,7 +46,7 @@ send_queue = Queue()
 
 class Transmitter(object):
 
-    def __init__(self, lp_mode):
+    def __init__(self, lp_mode=False):
         self._lp_mode = lp_mode
 
     def transmit(self, image, imtype=None):
@@ -244,7 +244,7 @@ class Transmitter(object):
 
 class Receiver(object):
 
-    def __init__(self, lp_mode):
+    def __init__(self, lp_mode=False):
         self._lp_mode = lp_mode
 
     def receive(self):
@@ -661,6 +661,14 @@ def zig_zag_reconstruct(vector):
                 result_index+= 1
     return matrix
 
+
+def create_runs(length, value):
+    runs = []
+    while length > 255:
+        runs.extend([255, value])
+        length -= 255
+    runs.extend([length, value])
+    return runs
 
 def create_runs(length, value):
     runs = []
