@@ -13,7 +13,6 @@ import encoding as enc
 import struct
 import bitarray
 import matplotlib.pyplot as plt
-import cv2
 
 TRANS_SIZE = 7500
 
@@ -36,7 +35,7 @@ NO_COMP_HEADER = '3i'
 NO_COMP_HEADER_SIZE = struct.calcsize(NO_COMP_HEADER)
 DECIMATE_HEADER = '7i'
 DECIMATE_HEADER_SIZE = struct.calcsize(DECIMATE_HEADER)
-BW_HEADER = '9i'
+BW_HEADER = '12ib'
 BW_HEADER_SIZE = struct.calcsize(BW_HEADER)
 DCT_HEADER = '4i'
 DCT_HEADER_SIZE = struct.calcsize(DCT_HEADER)
@@ -47,7 +46,7 @@ send_queue = Queue()
 
 class Transmitter(object):
 
-    def __init__(self, lp_mode=False):
+    def __init__(self, lp_mode):
         self._lp_mode = lp_mode
 
     def transmit(self, image, imtype=None):
@@ -71,66 +70,22 @@ class Transmitter(object):
         """
         # Finds the best DWT Compression that Fits
         DWT_result = None
-        DWT_thresh = 10 #XXX
-        DWT_result_size = TRANS_SIZE - 1
-        thresh_increment = -1
-
-        while DWT_result_size < TRANS_SIZE and DWT_thresh > 0: #max values for int8
-            DWT_result = haar_downsample(image, DWT_thresh)
-            DWT_result_encode = rle_encode(DWT_result)
-            DWT_result_size = DWT_result_encode.itemsize*DWT_result_encode.size
-            print('DWT Threshold: ' + str(DWT_thresh) + " DWT_Size: " + str(DWT_result_size))
-            if DWT_result_size > TRANS_SIZE and DWT_thresh == 127:
-                DWT_result = None
-                break;
-            if DWT_result_size > TRANS_SIZE:
-                DWT_thresh += 1
-                DWT_result = haar_downsample(image, DWT_thresh)
-                DWT_result_encode = rle_encode(DWT_result)
-                DWT_result_size = DWT_result_encode.itemsize*DWT_result_encode.size
-                break;
-            #thresh_increment = (DWT_result_size - TRANS_SIZE) // 1000
-            #thresh_increment = 1 if thresh_increment < 1 else thresh_increment
-            DWT_thresh += thresh_increment
-
+        DWT_thresh = 0 #XXX
+        DWT_result = haar_downsample(image, DWT_thresh)
 
         # Finds the best DCT Compression that Fits
         DCT_result = None
-        DCT_thresh = 127 #XXX
-        DCT_result_size = TRANS_SIZE - 1
-        thresh_increment = -1
+        DCT_thresh = 0 #XXX
+        DCT_result = dct_downsample(image, DCT_thresh)
 
-        while DCT_result_size < TRANS_SIZE and DCT_thresh > 0: #max values for int8
-            DCT_result = dct_downsample(image, DCT_thresh)
-            DCT_result_encode = rle_encode(DCT_result)
-            DCT_result_size = DCT_result_encode.itemsize*DCT_result_encode.size
-            print('DCT Threshold: ' + str(DCT_thresh) + " DCT_Size: " + str(DCT_result_size))
-            if DCT_result_size > TRANS_SIZE and DCT_thresh == 127:
-                DCT_result = None
-                break;
-            if DCT_result_size > TRANS_SIZE:
-                DCT_thresh += 1
-                DCT_result = dct_downsample(image, DCT_thresh)
-                DCT_result_encode = rle_encode(DCT_result)
-                DCT_result_size = DCT_result_encode.itemsize*DCT_result_encode.size
-                break;
-            #thresh_increment = (DCT_result_size - TRANS_SIZE) // 5000
-            #thresh_increment = 1 if thresh_increment < 1 else thresh_increment
-            DCT_thresh += thresh_increment
 
         # Finds the best DECIMATE Compression that Fits
         DECIMATE_result = decimate_downsample(image, imtype)
         #RLE_result = self.run_length_encoding_compression(image)
         NO_COMPRESSION_result = None
-        if image.size < TRANS_SIZE:
-            NO_COMPRESSION_result = image
 
-        DWT_PSNR = 0.0
-        if DWT_result != None:
-            DWT_PSNR = PSNR(original, haar_upsample(DWT_result, original_shape, imtype))
-        DCT_PSNR = 0.0
-        if DCT_result != None:
-            DCT_PSNR = PSNR(original, dct_upsample(DCT_result, original_shape, imtype))
+        DWT_PSNR = PSNR(original, haar_upsample(DWT_result, original_shape, imtype))
+        DCT_PSNR = PSNR(original, dct_upsample(DCT_result, original_shape, imtype))
         DECIMATE_PSNR = PSNR(original, decimate_upsample(DECIMATE_result, imtype, original_shape))
         #RLE_PSNR = PSNR(image, self.run_length_encoding_decompression(RLE_result, imtype))
         NO_COMPRESSION_PSNR = PSNR(original, NO_COMPRESSION_result)
@@ -138,12 +93,13 @@ class Transmitter(object):
         psnr_arr = np.array([DWT_PSNR, DCT_PSNR, DECIMATE_PSNR, NO_COMPRESSION_PSNR])
         print("PSNR VALUES: w, c, deci, none ", psnr_arr)
 
-        result_arr = [({'values' : DWT_result_encode, 'shape' : original_shape}, DWT), \
-                      ({'values' : DCT_result_encode, 'shape' : original_shape}, DCT), \
+        result_arr = [({'values' : DWT_result, 'shape' : original_shape}, DWT), \
+                      ({'values' : DCT_result, 'shape' : original_shape}, DCT), \
                       ({'values' : DECIMATE_result, 'shape': original_shape}, DECIMATE), \
-                      ({'values' : image, 'shape': original_shape}, NO_COMPRESSION)]
+                      ({'values' : image}, NO_COMPRESSION)]
 
-        return result_arr[np.argmax(psnr_arr)]
+        return result_arr[1]
+        #return result_arr[np.argmax(psnr_arr)]
 
     def to_packet_bits(self, img_comp, comp_type, imtype):
         """
@@ -156,8 +112,8 @@ class Transmitter(object):
         img = img_comp['values']
 
         if comp_type == NO_COMPRESSION:
-            img_shape = img_comp['shape']
-            img_1D = np.reshape(img, img_shape[0]*img_shape[1]*img_shape[2])
+            img_shape = img.shape
+            img_1D = np.reshape(img_comp, img_shape[0]*img_shape[1]*img_shape[2])
             img_bytes = img_1D.tobytes()
             header = struct.pack(NO_COMP_HEADER, *img_shape)
 
@@ -167,6 +123,7 @@ class Transmitter(object):
             img_bytes = img_1D.tobytes()
             header = struct.pack(DECIMATE_HEADER, *(img_comp['shape'] + img.shape + (imtype,)))
 
+<<<<<<< HEAD
         elif comp_type == DCT:
             img_bytes = img.tobytes()
             header = struct.pack(DCT_HEADER, *(img_comp['shape'] + (imtype, )))
@@ -179,7 +136,27 @@ class Transmitter(object):
         bits = bitarray.bitarray()
         bits.frombytes(pkt_bytes)
 
+        return bits
+=======
+            black, white = img_comp['black'], img_comp['white']
+            orig_shape = img_comp['shape']
+            dec_shape = img_comp['dec_shape']
+
+            type_bit = 0
+            if img_comp['type'] == np.uint16:
+                type_bit = 1
+            elif img_comp['type'] == np.uint8:
+                type_bit = 2
+
+            header = struct.pack(BW_HEADER, *(tuple(black) + tuple(white) + orig_shape + dec_shape + (type_bit, )))
+            pkt_bytes = comp_header + header + rle_bytes
+            print('rle:', len(rle))
+            print('rle_bytes:', len(rle_bytes))
+            print('header:', len(header))
+            print('pkt_bytes:', len(pkt_bytes))
+
         return pkt_bytes
+>>>>>>> 3408d5b0c2ff54b2d287798e0c7eac7556e4983d
 
 
     def send_bits(self, bytes):
@@ -237,8 +214,7 @@ class Transmitter(object):
             imtype = GRAYSCALE
             if self.is_black_white(image):
                 imtype = BLACK_WHITE
-        print("IMTYPE", imtype)
-        print("shape", image.shape)
+
         return image, imtype
 
 
@@ -246,7 +222,7 @@ class Transmitter(object):
 
 class Receiver(object):
 
-    def __init__(self, lp_mode=False):
+    def __init__(self, lp_mode):
         self._lp_mode = lp_mode
 
     def receive(self):
@@ -265,7 +241,7 @@ class Receiver(object):
         Decodes the packet bits into a packet.
         """
         pkt = None
-        pkt_bytes = bits
+        pkt_bytes = bits.tobytes()
 
         comp_type_bytes, pkt_bytes = pkt_bytes[:COMP_TYPE_SIZE], pkt_bytes[COMP_TYPE_SIZE:]
         comp_type = struct.unpack(COMP_TYPE, comp_type_bytes)[0]
@@ -308,7 +284,7 @@ class Receiver(object):
             header, pkt_bytes = pkt_bytes[:DCT_HEADER_SIZE], pkt_bytes[DCT_HEADER_SIZE:]
             header_struct = struct.unpack(DCT_HEADER, header)
             orig_shape, imtype = header_struct[:3], header_struct[3:]
-            img = rle_decode(np.fromstring(pkt_bytes, dtype=np.uint16)).astype(np.int8)
+            img = np.fromstring(pkt_bytes, dtype=np.int8)
             data = {'image': img, 'shape': orig_shape, 'imtype' : imtype}
             pkt = DCT, data
 
@@ -316,7 +292,7 @@ class Receiver(object):
             header, pkt_bytes = pkt_bytes[:DWT_HEADER_SIZE], pkt_bytes[DWT_HEADER_SIZE:]
             header_struct = struct.unpack(DWT_HEADER, header)
             orig_shape, imtype = header_struct[:3], header_struct[3:]
-            img = rle_decode(np.fromstring(pkt_bytes, dtype=np.uint16)).astype(np.int8)
+            img = np.fromstring(pkt_bytes, dtype=np.int8)
             data = {'image': img, 'shape': orig_shape, 'imtype' : imtype}
             pkt = DWT, data
 
@@ -391,7 +367,8 @@ class Receiver(object):
 #****************************************************************************
 
 def decimate_downsample(image, imtype):
-    bytes_original = image.shape[0] * image.shape[1] * image.shape[2]
+    bytes_original = image.shape[0] * image.shape[1]
+    image = np.reshape(image[:,:,0], (image.shape[0], image.shape[1], 1))
     down_sampling_factor = np.ceil(np.sqrt(bytes_original / TRANS_SIZE))
     down_sampling_factor = int(down_sampling_factor)
     h_lpf = gaussian_lpf(np.pi / down_sampling_factor)
@@ -429,10 +406,10 @@ def gaussian_lpf(wc, width=None):
 
 def convolve_image(image, filt):
     layers = ()
-    for i in range(image.shape[2]):
+    for i in range(3):
         layer_lpf = im_filters.convolve(image[:,:,i], filt) # signal.convolve2d(image[:,:,i], filt, mode='same')
         layers += (layer_lpf.astype(np.uint8), )
-
+    
     return np.dstack(layers)
 
 def to_uint8(image):
@@ -508,27 +485,6 @@ def dct_matrix(N):
     return H
 
 def haar_downsample(image, threshold):
-    QY=np.array([[16,11,10,16,24,40,51,61],
-                         [12,12,14,19,26,48,60,55],
-                         [14,13,16,24,40,57,69,56],
-                         [14,17,22,29,51,87,80,62],
-                         [18,22,37,56,68,109,103,77],
-                         [24,35,55,64,81,104,113,92],
-                         [49,64,78,87,103,121,120,101],
-                         [72,92,95,98,112,100,103,99]])
-
-    QC=np.array([[17,18,24,47,99,99,99,99],
-                         [18,21,26,66,99,99,99,99],
-                         [24,26,56,99,99,99,99,99],
-                         [47,66,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99]])
-    Q = [QY, QC, QC]
-
-    cv2.cv
-
     N = 8
     haar = haar_matrix(N)
     img = image
@@ -549,8 +505,7 @@ def haar_downsample(image, threshold):
         for i in range(0,img.shape[0], N):
             for j in range(0, img.shape[1], N):
                 block = np.dot(np.dot(haar,img[i:i+N, j:j+N, k]), np.transpose(haar))
-                block_quantized = np.round(block/Q[k])
-                img_out.extend(zig_zag_traverse(block_quantized))
+                img_out.extend(zig_zag_traverse(block))
 
     img_out = np.array(img_out)
     img_out /= 4
@@ -559,26 +514,6 @@ def haar_downsample(image, threshold):
     return img_out
 
 def haar_upsample(img, original_shape, imtype):
-    QY=np.array([[16,11,10,16,24,40,51,61],
-                         [12,12,14,19,26,48,60,55],
-                         [14,13,16,24,40,57,69,56],
-                         [14,17,22,29,51,87,80,62],
-                         [18,22,37,56,68,109,103,77],
-                         [24,35,55,64,81,104,113,92],
-                         [49,64,78,87,103,121,120,101],
-                         [72,92,95,98,112,100,103,99]])
-
-    QC=np.array([[17,18,24,47,99,99,99,99],
-                         [18,21,26,66,99,99,99,99],
-                         [24,26,56,99,99,99,99,99],
-                         [47,66,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99]])
-    Q = [QY, QC, QC]
-
-
     N = 8
     # reconstruct image
     image = img.astype(np.float)
@@ -600,9 +535,8 @@ def haar_upsample(img, original_shape, imtype):
         for i in range(0,original_shape[0], N):
             for j in range(0, original_shape[1], N):
                 block = zig_zag_reconstruct(image[N*N*counter : (counter+1)*N*N])
-                block_dequantized = (block*Q[k])
                 counter += 1
-                img_out[i:i+N, j:j+N, k] = np.dot(np.dot(np.transpose(haar),block_dequantized), haar)
+                img_out[i:i+N, j:j+N, k] = np.dot(np.dot(np.transpose(haar),block), haar)
 
     img_return = img_out[0:original_shape[0], 0:original_shape[1], 0:num_channels]
     if imtype != COLOR:
@@ -611,32 +545,9 @@ def haar_upsample(img, original_shape, imtype):
 
 
 def dct_downsample(image, threshold):
-
-    QY=np.array([[16,11,10,16,24,40,51,61],
-                         [12,12,14,19,26,48,60,55],
-                         [14,13,16,24,40,57,69,56],
-                         [14,17,22,29,51,87,80,62],
-                         [18,22,37,56,68,109,103,77],
-                         [24,35,55,64,81,104,113,92],
-                         [49,64,78,87,103,121,120,101],
-                         [72,92,95,98,112,100,103,99]])
-
-    QC=np.array([[17,18,24,47,99,99,99,99],
-                         [18,21,26,66,99,99,99,99],
-                         [24,26,56,99,99,99,99,99],
-                         [47,66,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99]])
-    Q = [QY, QC, QC]
-
     N = 8
     haar = dct_matrix(N)
     img = image
-    # if image.shape[2] > 1:
-    #     print("shapeshape", image.shape[2])
-    #     img = cv2.cvtColor(image, cv2.cv.CV_BGR2YCrCb)
     pad_0 = image.shape[0] % N
     if pad_0 != 0:
         pad_0 = N - pad_0
@@ -654,8 +565,6 @@ def dct_downsample(image, threshold):
         for i in range(0,img.shape[0], N):
             for j in range(0, img.shape[1], N):
                 block = np.dot(np.dot(haar,img[i:i+N, j:j+N, k]), np.transpose(haar))
-                # if image.shape[2] > 1:
-                #     block = np.round(block/Q[k])
                 img_out.extend(zig_zag_traverse(block))
 
     img_out = np.array(img_out)
@@ -665,30 +574,12 @@ def dct_downsample(image, threshold):
     return img_out
 
 def dct_upsample(img, original_shape, imtype):
-    QY=np.array([[16,11,10,16,24,40,51,61],
-                         [12,12,14,19,26,48,60,55],
-                         [14,13,16,24,40,57,69,56],
-                         [14,17,22,29,51,87,80,62],
-                         [18,22,37,56,68,109,103,77],
-                         [24,35,55,64,81,104,113,92],
-                         [49,64,78,87,103,121,120,101],
-                         [72,92,95,98,112,100,103,99]])
-
-    QC=np.array([[17,18,24,47,99,99,99,99],
-                         [18,21,26,66,99,99,99,99],
-                         [24,26,56,99,99,99,99,99],
-                         [47,66,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99],
-                         [99,99,99,99,99,99,99,99]])
-    Q = [QY, QC, QC]
-
     N = 8
     # reconstruct image
     image = img.astype(np.float)
     image = image * 8
 
+<<<<<<< HEAD
     num_channels = 1
     if imtype == COLOR:
          num_channels = 3
@@ -704,16 +595,13 @@ def dct_upsample(img, original_shape, imtype):
         for i in range(0,original_shape[0], N):
             for j in range(0, original_shape[1], N):
                 block = zig_zag_reconstruct(image[N*N*counter : (counter+1)*N*N])
-                # if imtype == COLOR:
-                #     block = (block*Q[k])
                 counter += 1
                 img_out[i:i+N, j:j+N, k] = np.dot(np.dot(np.transpose(haar),block), haar)
 
     img_return = img_out[0:original_shape[0], 0:original_shape[1], 0:num_channels]
     if imtype != COLOR:
         img_return = np.dstack((img_return, img_return, img_return))
-    # else:
-    #     img_return = cv2.cvtColor(img_return, cv2.cv.CV_YCrCb2BGR)
+
     return img_return.astype(np.uint8)
 
 def zig_zag_traverse(matrix):
@@ -754,31 +642,6 @@ def zig_zag_reconstruct(vector):
     return matrix
 
 
-def create_runs(length, value):
-    runs = []
-    while length > (2**16)-1:
-        runs.extend([(2**16)-1, value])
-        length -= (2**16)-1
-    runs.extend([length, value])
-    return runs
-
-def rle_encode(array_1D):
-    changes, = np.where(np.diff(array_1D) != 0)
-    changes = np.concatenate(([0], changes + 1, [len(array_1D)]))
-    rle = np.array([create_runs(b-a, array_1D[a]) for a, b in zip(changes[:-1], changes[1:])])
-    rle_flat = []
-    for l in rle:
-        rle_flat.extend(l)
-    return np.array(rle_flat, dtype=np.uint16)
-
-def rle_decode(rle_enc):
-    decoded = []
-    for i in range(0, len(rle_enc), 2):
-        run = [rle_enc[i+1]]*rle_enc[i]
-        decoded.extend(run)
-    return np.array(decoded, dtype=np.uint8)
-
-
 def run_length_encoding_compression(self, image):
     gs = np.average(image, axis=2)
     black_loc = np.unravel_index(gs.argmin(), gs.shape)
@@ -802,3 +665,47 @@ def run_length_encoding_decompression(self, image, imtype):
 
     recon = np.zeros(orig_shape).astype(np.uint8)
     recon[:,:,0], recon[:,:,1], recon[:,:,2] = red, green, blue
+=======
+    return 4 * img_out[0:original_shape[0], 0:original_shape[1], 0:original_shape[2]]
+
+def rle_encode(array_1D):
+    changes, = np.where(np.diff(array_1D) != 0)
+    changes = np.concatenate(([0], changes + 1, [len(array_1D)]))
+    rle = np.array([[b-a, array_1D[a]] for a, b in zip(changes[:-1], changes[1:])]).flatten()
+    if np.max(rle) > 255:
+        raise Exception('Run longer than uint8')
+    return rle.astype(np.uint8)
+
+def rle_decode(rle_enc):
+    decoded = []
+    for i in range(0, len(rle_enc), 2):
+        run = [rle_enc[i+1]]*rle_enc[i]
+        decoded.extend(run)
+    return np.array(decoded, dtype=np.uint8)
+
+
+## Shitty Decimation
+def simple_decimation(image):
+    bytes_original = float(image.shape[0]) * float(image.shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+   
+    downsample0 = signal.decimate(np.asarray(image, dtype=np.float), block_size, axis = 0) 
+    downsample1 = np.asarray( signal.decimate(downsample0, block_size, axis = 1), dtype=np.uint8)           
+    return (downsample1, image.shape)
+
+def simple_upsample(image, shape):
+    bytes_original = float(shape[0]) * float(shape[1])
+    down_sampling_factor = np.ceil(bytes_original / TRANS_SIZE)
+    block_size = int(np.ceil(np.sqrt(down_sampling_factor)))
+    print(image.shape) 
+    upsample0 = signal.resample(image, shape[0], axis = 0) 
+    print(upsample0.shape) 
+    upsample1 = signal.resample(upsample0, shape[1], axis = 1)             
+    print(upsample1.shape) 
+    return upsample1
+
+# TRANSMISSION / RECIEVE BIT STREAM    
+# bit_stream = np.unpackbits(downsample1)
+# image = np.packbits(bit_stream) 
+>>>>>>> 3408d5b0c2ff54b2d287798e0c7eac7556e4983d
