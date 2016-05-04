@@ -292,11 +292,12 @@ def gaussian_lpf(wc, width=None):
     return np.exp(-(x**2 + y**2)/(2*sigma**2)) / (2 * np.pi * sigma**2)
 
 def convolve_image(image, filt):
-    image_lpf = np.zeros(image.shape)
+    layers = ()
     for i in range(3):
-        image_lpf[:,:,i] = im_filters.convolve(image[:,:,i], filt) # signal.convolve2d(image[:,:,i], filt, mode='same')
-
-    return image_lpf.astype(np.uint8)
+        layer_lpf = im_filters.convolve(image[:,:,i], filt) # signal.convolve2d(image[:,:,i], filt, mode='same')
+        layers += (layer_lpf.astype(np.uint8), )
+    
+    return np.dstack(layers)
 
 def to_uint8(image):
     image = np.copy(image)
@@ -329,6 +330,20 @@ def bw_rle_decode(bw_rle):
         decoded.extend([curr_val]*run)
         curr_val = 0 if curr_val else 1  # flip curr_val
     return np.array(decoded).astype(np.uint8)
+
+def rle_encode(array_1D):
+    changes, = np.where(np.diff(array_1D) != 0)
+    changes = np.concatenate(([0], changes + 1, [len(array_1D)]))
+    rle = np.array([[b-a, array_1D[a]] for a, b in zip(changes[:-1], changes[1:])]).flatten()
+    return rle.astype(np.uint8)
+
+def rle_decode(rle_enc):
+    decoded = []
+    for i in range(0, len(rle_enc), 2):
+        run = [rle_enc[i+1]]*rle_enc[i]
+        decoded.extend(run)
+    return np.array(decoded, dtype=np.uint8)
+
 
 ## Shitty Decimation
 def simple_decimation(image):
