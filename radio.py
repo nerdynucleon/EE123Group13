@@ -140,7 +140,7 @@ class Transmitter(object):
         result_arr = [({'values' : DWT_result_encode, 'shape' : original_shape}, DWT), \
                       ({'values' : DCT_result_encode, 'shape' : original_shape}, DCT), \
                       ({'values' : DECIMATE_result, 'shape': original_shape}, DECIMATE), \
-                      ({'values' : image}, NO_COMPRESSION)]
+                      ({'values' : image, 'shape': original_shape}, NO_COMPRESSION)]
 
         return result_arr[np.argmax(psnr_arr)]
 
@@ -155,8 +155,8 @@ class Transmitter(object):
         img = img_comp['values']
 
         if comp_type == NO_COMPRESSION:
-            img_shape = img.shape
-            img_1D = np.reshape(img_comp, img_shape[0]*img_shape[1]*img_shape[2])
+            img_shape = img_comp['shape']
+            img_1D = np.reshape(img, img_shape[0]*img_shape[1]*img_shape[2])
             img_bytes = img_1D.tobytes()
             header = struct.pack(NO_COMP_HEADER, *img_shape)
 
