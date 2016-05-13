@@ -14,7 +14,7 @@ import struct
 import bitarray
 import matplotlib.pyplot as plt
 
-TRANS_SIZE = 7500
+TRANS_SIZE = 2*7500
 
 # Compression types
 NO_COMPRESSION = 0
