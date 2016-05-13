@@ -507,6 +507,8 @@ def receive_bytes():
     p = pyaudio.PyAudio()
     fs_usb = p.get_device_info_by_index(2)['defaultSampleRate']
     t_rec = threading.Thread(target=record_audio, args=(Qin, cQin, p, fs_usb, dusb_in))
+    s = serial.Serial(port='/dev/tty.SLAB_USBtoUART')
+    s.setDTR(0)
 
     t_rec.start()
     npack = 0
