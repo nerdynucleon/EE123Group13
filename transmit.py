@@ -175,7 +175,7 @@ class TNCaprs:
         self.Abuffer = Abuffer             # size of audio buffer
         self.Nchunks = Nchunks             # number of audio buffers to collect
         self.Nbuffer = Abuffer*Nchunks+self.N*3-3         # length of the large buffer for processing
-        self.Ns = 1.0*fs/1200 # samples per symbol
+        self.Ns = 1.0*fs/baud # samples per symbol
 
         ## state variables for the modulator
         self.prev_ph = 0  # previous phase to maintain continuous phase when recalling the function
