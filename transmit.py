@@ -55,20 +55,20 @@ def play_audio( Q,ctrlQ ,p, fs , dev, ser="", keydelay=0.1):
     # keydelay - delay after keying the radio
     #
     #
-    # There are two ways to end the thread: 
+    # There are two ways to end the thread:
     #    1 - send "EOT" through  the control queue. This is used to terminate the thread on demand
-    #    2 - send "EOT" through the data queue. This is used to terminate the thread when data is done. 
+    #    2 - send "EOT" through the data queue. This is used to terminate the thread when data is done.
     #
     # You can also key the radio either through the data queu and the control queue
-    
-    
+
+
     # open output stream
     ostream = p.open(format=pyaudio.paFloat32, channels=1, rate=int(fs), output=True, output_device_index=dev)
     # play audio
     while (1):
         if not ctrlQ.empty():
-            
-            # control queue 
+
+            # control queue
             ctrlmd = ctrlQ.get()
             if ctrlmd is "EOT"  :
                     ostream.stop_stream()
@@ -81,8 +81,8 @@ def play_audio( Q,ctrlQ ,p, fs , dev, ser="", keydelay=0.1):
             elif (ctrlmd is "KEYON" and ser!=""):
                 ser.setDTR(1)  # key PTT
                 #print("keyon\n")
-                time.sleep(keydelay) # wait 200ms (default) to let the power amp to ramp up 
-        
+                time.sleep(keydelay) # wait 200ms (default) to let the power amp to ramp up
+
         data = Q.get()
 
         if (data is "EOT") :
@@ -104,30 +104,30 @@ def play_audio( Q,ctrlQ ,p, fs , dev, ser="", keydelay=0.1):
                 print("Exception", data)
                 raise
                 break
-            
+
 def record_audio( queue,ctrlQ, p, fs ,dev,chunk=1024):
     # record_audio records audio with sampling rate = fs
     # queue - output data queue
     # p     - pyAudio object
     # fs    - sampling rate
-    # dev   - device number 
+    # dev   - device number
     # chunk - chunks of samples at a time default 1024
     #
     # Example:
     # fs = 44100
     # Q = Queue.queue()
     # p = pyaudio.PyAudio() #instantiate PyAudio
-    # record_audio( Q, p, fs, 1) # 
+    # record_audio( Q, p, fs, 1) #
     # p.terminate() # terminate pyAudio
-    
-   
+
+
     istream = p.open(format=pyaudio.paFloat32, channels=1, rate=int(fs),input=True,input_device_index=dev,frames_per_buffer=chunk)
 
     # record audio in chunks and append to frames
     frames = [];
     while (1):
         if not ctrlQ.empty():
-            ctrlmd = ctrlQ.get()          
+            ctrlmd = ctrlQ.get()
             if ctrlmd is "EOT"  :
                 istream.stop_stream()
                 istream.close()
@@ -148,12 +148,12 @@ dout = 1
 
 s = serial.Serial(port='/dev/tty.SLAB_USBtoUART')
 
-
+baud = 2400
 class TNCaprs:
-    
+
     def __init__(self, fs = 48000.0, Abuffer = 1024, Nchunks=43):
-        
-        #  Implementation of an afsk1200 TNC. 
+
+        #  Implementation of an afsk1200 TNC.
         #
         #  The TNC processes a `Abuffer` long buffers, till `Nchunks` number of buffers are collected into a large one.
         #  This is because python is able to more efficiently process larger buffers than smaller ones.
@@ -165,27 +165,27 @@ class TNCaprs:
         #   Abuffer - Input audio buffers from Pyaudio
         #   Nchunks - Number of audio buffers to collect before processing
         #   plla    - agressivness parameter of the PLL
-        
-        
+
+
         ## compute sizes based on inputs
         self.TBW = 2.0   # TBW for the demod filters
-        self.N = (int(fs/1200*self.TBW)//2)*2+1   # length of the filters for demod
-        self.fs = fs     # sampling rate   
+        self.N = (int(fs/baud*self.TBW)//2)*2+1   # length of the filters for demod
+        self.fs = fs     # sampling rate
         self.BW = self.TBW/(1.0*self.N/fs)      # BW of filter based on TBW
         self.Abuffer = Abuffer             # size of audio buffer
         self.Nchunks = Nchunks             # number of audio buffers to collect
         self.Nbuffer = Abuffer*Nchunks+self.N*3-3         # length of the large buffer for processing
         self.Ns = 1.0*fs/1200 # samples per symbol
-        
+
         ## state variables for the modulator
         self.prev_ph = 0  # previous phase to maintain continuous phase when recalling the function
-        
+
         ##  Generate Filters for the demodulator
         self.h_lp = signal.firwin(self.N,self.BW/fs*1.0,window='hanning')
         self.h_lpp = signal.firwin(self.N,self.BW*2*1.2/fs,window='hanning')
-        self.h_space = self.h_lp*exp(1j*2*pi*(2200)*r_[-self.N/2:self.N/2]/fs)
-        self.h_mark = self.h_lp*exp(1j*2*pi*(1200)*r_[-self.N/2:self.N/2]/fs)
-        self.h_bp = signal.firwin(self.N,self.BW/fs*2.2,window='hanning')*exp(1j*2*pi*1700*r_[-self.N/2:self.N/2]/fs)
+        self.h_space = self.h_lp*exp(1j*2*pi*(3000)*r_[-self.N/2:self.N/2]/fs)
+        self.h_mark = self.h_lp*exp(1j*2*pi*(1800)*r_[-self.N/2:self.N/2]/fs)
+        self.h_bp = signal.firwin(self.N,self.BW/fs*2.2,window='hanning')*exp(1j*2*pi*2400*r_[-self.N/2:self.N/2]/fs)
 
 
         ## PLL state variables  -- so conntinuity between buffers is preserved
@@ -193,11 +193,11 @@ class TNCaprs:
         self.pll =  0                # PLL counter
         self.ppll = -self.dpll       # PLL counter previous value -- to detect overflow
         self.plla = 0.74             # PLL agressivness (small more agressive)
-        
+
 
         ## state variable to NRZI2NRZ
-        self.NRZIprevBit = True  
-        
+        self.NRZIprevBit = True
+
         ## State variables for findPackets
         self.state='search'   # state variable:  'search' or 'pkt'
         self.pktcounter = 0   # counts the length of a packet
@@ -209,12 +209,12 @@ class TNCaprs:
         self.chunk_count = 0              # chunk counter
         self.oldbits = bitarray.bitarray([0,0,0,0,0,0,0])    # bits from end of prev buffer to be copied to beginning of new
         self.Npackets = 0                 # packet counter
-        
-        
-    
-    
+
+
+
+
     def NRZ2NRZI(self,NRZ, prevBit = True):
-        NRZI = NRZ.copy() 
+        NRZI = NRZ.copy()
         for n in range(0,len(NRZ)):
             if NRZ[n] :
                 NRZI[n] = prevBit
@@ -223,15 +223,15 @@ class TNCaprs:
             prevBit = NRZI[n]
         return NRZI
 
-    def NRZI2NRZ(self, NRZI):  
-        NRZ = NRZI.copy() 
-    
+    def NRZI2NRZ(self, NRZI):
+        NRZ = NRZI.copy()
+
         for n in range(0,len(NRZI)):
             NRZ[n] = NRZI[n] == self.NRZIprevBit
             self.NRZIprevBit = NRZI[n]
-    
+
         return NRZ
-    
+
     def modulate(self,bits):
     # the function will take a bitarray of bits and will output an AFSK1200 modulated signal of them, sampled at 44100Hz
     #  Inputs:
@@ -239,40 +239,40 @@ class TNCaprs:
     #         fs    - sampling rate
     # Outputs:
     #         sig    -  returns afsk1200 modulated signal
-    
-        fss = lcm((1200,self.fs))
+
+        fss = lcm((baud,self.fs))
         deci = fss/self.fs
-    
-        Nb = fss/1200
+
+        Nb = fss/baud
         nb = len(bits)
         NRZ = ones((nb,Nb))
         for n in range(0,nb):
             if bits[n]:
                 NRZ[n,:]=-NRZ[n,:]
-    
-        freq = 1700 + 500*NRZ.ravel()
+
+        freq = 2400 + 600*NRZ.ravel()
         ph = self.prev_ph + 2.0*pi*integrate.cumtrapz(freq)/fss
         sig = cos(ph[::deci])
-        
-        return sig 
-    
+
+        return sig
+
     def modulatPacket(self, callsign, digi, dest, info, preflags=80, postflags=80 ):
-        
+
         # given callsign, digipath, dest, info, number of pre-flags and post-flags the function contructs
-        # an appropriate aprs packet, then converts them to NRZI and calls `modulate` to afsk 1200 modulate the packet. 
-        
+        # an appropriate aprs packet, then converts them to NRZI and calls `modulate` to afsk 1200 modulate the packet.
+
         packet = ax25.UI(destination=dest,source=callsign, info=info, digipeaters=digi.split(b','),)
         prefix = bitarray.bitarray(np.tile([0,1,1,1,1,1,1,0],(preflags,)).tolist())
         suffix = bitarray.bitarray(np.tile([0,1,1,1,1,1,1,0],(postflags,)).tolist())
         sig = self.modulate(self.NRZ2NRZI(prefix + packet.unparse()+suffix))
 
         return sig
-    
-    
+
+
 
     def demod(self, buff):
 
-    
+
         SIG = signal.fftconvolve(buff,self.h_bp,mode='valid')
         mark = signal.fftconvolve(SIG,self.h_mark,mode='valid')
         space = signal.fftconvolve(SIG,self.h_space,mode='valid')
@@ -281,34 +281,34 @@ class TNCaprs:
         return NRZ
 
 
-    
-    def PLL(self, NRZa):        
-        idx = zeros(len(NRZa)//int(self.Ns)*2)   # allocate space to save indexes        
+
+    def PLL(self, NRZa):
+        idx = zeros(len(NRZa)//int(self.Ns)*2)   # allocate space to save indexes
         c = 0
-        
+
         for n in range(1,len(NRZa)):
             if (self.pll < 0) and (self.ppll >0):
                 idx[c] = n
                 c = c+1
-        
+
             if (NRZa[n] >= 0) !=  (NRZa[n-1] >=0):
                 self.pll = int32(self.pll*self.plla)
-            
-        
+
+
             self.ppll = self.pll
             self.pll = int32(self.pll+ self.dpll)
-    
-        return idx[:c].astype(int32) 
-    
-   
+
+        return idx[:c].astype(int32)
+
+
 
     def findPackets(self,bits):
-        # function take a bitarray and looks for AX.25 packets in it. 
+        # function take a bitarray and looks for AX.25 packets in it.
         # It implements a 2-state machine of searching for flag or collecting packets
         flg = bitarray.bitarray([0,1,1,1,1,1,1,0])
         packets = []
         n = self.bitpointer
-        
+
         # Loop over bits
         while (n < len(bits)-7) :
             # default state is searching for packets
@@ -326,9 +326,9 @@ class TNCaprs:
                     n = n + 7
                 else:
                     # flag was not found, advance by 1
-                    n = n + 1            
-        
-            # state is to collect packet data. 
+                    n = n + 1
+
+            # state is to collect packet data.
             elif self.state is 'pkt':
                 # Check if we reached a flag by comparing with 0111111
                 # 6 times ones is not allowed in a packet, hence it must be a flag (if there's no error)
@@ -342,14 +342,14 @@ class TNCaprs:
                         self.packet.extend(flg)
                         packets.append(self.packet.copy())
                     else:
-                        # packet is too short! false alarm. Keep searching 
+                        # packet is too short! false alarm. Keep searching
                         # We don't advance pointer since this this flag could be the beginning of a real packet
                         self.state = 'search'
                 # No flag, so collect the bit and add to the packet
                 else:
                     # check if packet is too long... if so, must be false alarm
                     if self.pktcounter < 2680:
-                        # Not a false alarm, collect the bit and advance pointer        
+                        # Not a false alarm, collect the bit and advance pointer
                         self.packet.append(bits[n])
                         self.pktcounter = self.pktcounter + 1
                         n = n + 1
@@ -357,18 +357,18 @@ class TNCaprs:
                         #runaway packet, switch state to searching, and advance pointer
                         self.state = 'search'
                         n = n + 1
-        
-        self.bitpointer = n-(len(bits)-7) 
+
+        self.bitpointer = n-(len(bits)-7)
         return packets
 
-    
+
     # function to generate a checksum for validating packets
     def genfcs(self,bits):
         # Generates a checksum from packet bits
         fcs = ax25.FCS()
         for bit in bits:
             fcs.update_bit(bit)
-    
+
         digest = bitarray.bitarray(endian="little")
         digest.frombytes(fcs.digest())
 
@@ -381,15 +381,15 @@ class TNCaprs:
     def decodeAX25(self,bits, deepsearch=False):
         ax = ax25.AX25()
         ax.info = "bad packet"
-    
-    
+
+
         bitsu = ax25.bit_unstuff(bits[8:-8])
-    
-        
+
+
         foundPacket = False
         if (self.genfcs(bitsu[:-16]).tobytes() == bitsu[-16:].tobytes()):
                 foundPacket = True
-        elif deepsearch: 
+        elif deepsearch:
             tbits = bits[8:-8]
             for n in range(0,len(tbits)):
                 tbits[n] = not tbits[n]
@@ -398,13 +398,13 @@ class TNCaprs:
                     print("Success deep search")
                     break
                 tbits[n] = not tbits[n]
-        
+
         if foundPacket == False:
             return ax
-        
-        
-                  
-    
+
+
+
+
         bytes = bitsu.tobytes()
         ax.destination = ax.callsign_decode(bitsu[:56])
         source = ax.callsign_decode(bitsu[56:112])
@@ -412,9 +412,9 @@ class TNCaprs:
             ax.source = b"".join((source[:-1],'-',source[-1]))
         else:
             ax.source = source[:-1]
-    
-        digilen=0    
-    
+
+        digilen=0
+
         if bytes[14]=='\x03' and bytes[15]=='\xf0':
             digilen = 0
         else:
@@ -427,37 +427,37 @@ class TNCaprs:
         #        return ax
         ax.digipeaters =  ax.callsign_decode(bitsu[112:112+digilen*8])
         ax.info = bitsu[112+digilen*8+16:-16].tobytes()
-    
+
         return ax
 
     def processBuffer(self, buff_in):
-        
+
         # function processes an audio buffer. It collect several small into a large one
         # Then it demodulates and finds packets.
         #
         # The function operates as overlapp and save
         # The function returns packets when they become available. Otherwise, returns empty list
-        
+
         N = self.N
         NN = N*3-3
-        
-        
+
+
         Nchunks = self.Nchunks
         Abuffer = self.Abuffer
         fs = self.fs
         Ns = self.Ns
-        
+
         validPackets=[]
         packets=[]
         NRZI=[]
         idx = []
         bits = []
-        
+
         # Fill in buffer at the right plave
         self.buff[NN+self.chunk_count*Abuffer:NN+(self.chunk_count+1)*Abuffer] = buff_in.copy()
         self.chunk_count = self.chunk_count + 1
-        
-        
+
+
         # number of chunk reached -- process large buffer
         if self.chunk_count == Nchunks:
             # Demodulate to get NRZI
@@ -469,30 +469,30 @@ class TNCaprs:
             # In case that buffer is too small raise an error -- must have at least 7 bits worth
             if len(bits) < 7:
                 raise ValueError('number of bits too small for buffer')
-            
+
             # concatenate end of previous buffer to current one
             bits = self.oldbits + self.NRZI2NRZ(bits)
-            
+
             # store end of bit buffer to next buffer
             self.oldbits = bits[-7:].copy()
-            
+
             # look for packets
             packets = self.findPackets(bits)
-            
+
             # Copy end of sample buffer to the beginning of the next (overlapp and save)
             self.buff[:NN] = self.buff[-NN:].copy()
-            
+
             # reset chunk counter
             self.chunk_count = 0
-            
+
             # checksum test for all detected packets
             for n in range(0,len(packets)):
-                if len(packets[n]) > 200: 
+                if len(packets[n]) > 200:
                     ax = self.decodeAX25(packets[n])
                     if ax.info != 'bad packet':
                         validPackets.append(ax)
-                        
-            
+
+
         return validPackets
 
 
@@ -515,14 +515,14 @@ def receive_bytes():
     while(1):
         tmp = Qin.get()
         packets  = modem.processBuffer(tmp)
-        for ax in packets: 
+        for ax in packets:
             npack = npack + 1
             print((str(npack)+")",str(ax)))
             if state == 0 and ax.destination[:5]=="BEGIN":
                 f1 = "" # open("rec_"+ax.info,"wb")
                 state = 1
-            elif state == 1 and ax.destination[:3] == "END": 
-                state = 2  
+            elif state == 1 and ax.destination[:3] == "END":
+                state = 2
                 break
             elif state == 1:
                 f1 += ax.info # f1.write(ax.info)
@@ -546,12 +546,12 @@ def send_bytes(data):
     Qout.put(np.zeros(fs_usb/2))
     Qout.put("KEYON")
     Qout.put(np.zeros(fs_usb/2))
-    tmp = modem.modulatPacket(callsign, "", "BEGIN", 'test.tiff', preflags=80, postflags=2 ) 
+    tmp = modem.modulatPacket(callsign, "", "BEGIN", 'test.tiff', preflags=80, postflags=2 )
     Qout.put(0.1*tmp)
     while(1):
         chunk_size = min(len(data), 256)
-        bytes_s, data = data[:chunk_size], data[chunk_size:] # f.read(256)    
-        tmp = modem.modulatPacket(callsign, "", str(npp), bytes_s, preflags=4, postflags=2 )    
+        bytes_s, data = data[:chunk_size], data[chunk_size:] # f.read(256)
+        tmp = modem.modulatPacket(callsign, "", str(npp), bytes_s, preflags=4, postflags=2 )
         Qout.put(0.1*tmp)
         npp = npp+1
         if len(data) == 0:
@@ -563,4 +563,3 @@ def send_bytes(data):
     play_audio(Qout, cQout, p, fs, dusb_out, s)
     # t_play.start()
     cQout.put("EOT")
-        
